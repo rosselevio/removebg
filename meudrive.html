@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meu Drive Pessoal</title>
+    <style>
+        :root {
+            --primary: #1a73e8;
+            --bg: #f8f9fa;
+            --surface: #ffffff;
+            --text: #3c4043;
+            --border: #dadce0;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+        .container {
+            width: 100%;
+            max-width: 800px;
+            background: var(--surface);
+            padding: 30px;
+            border-radius: 16px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+        h1 { font-size: 24px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
+        .config-box {
+            background: #f1f3f4;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        .config-box input {
+            padding: 10px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .config-box input[type="password"] { grid-column: span 2; }
+        .drop-zone {
+            border: 2px dashed var(--primary);
+            border-radius: 12px;
+            padding: 40px;
+            text-align: center;
+            background: #f8fafd;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .drop-zone.dragover { background: #e8f0fe; border-color: #1557b0; }
+        .progress-bar {
+            height: 4px;
+            width: 0%;
+            background: var(--primary);
+            margin-top: 15px;
+            transition: width 0.3s;
+            border-radius: 2px;
+        }
+        .status { margin-top: 10px; font-size: 14px; font-weight: bold; }
+        .file-list { margin-top: 30px; border-top: 1px solid var(--border); padding-top: 20px; }
+        .file-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            border-bottom: 1px solid var(--border);
+            font-size: 14px;
+        }
+        .file-item a { color: var(--primary); text-decoration: none; font-weight: 500; }
+        .file-item a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>📁 Meu Drive Privado</h1>
+    
+    <!-- Configurações de Acesso -->
+    <div class="config-box">
+        <input type="text" id="repoUser" placeholder="Usuário do GitHub (ex: joaosilva)">
+        <input type="text" id="repoName" placeholder="Nome do Repositório (ex: meu-drive)">
+        <input type="password" id="githubToken" placeholder="Seu GitHub Personal Access Token (PAT)">
+    </div>
+
+    <!-- Zona de Upload -->
+    <div class="drop-zone" id="dropZone">
+        <p>Arraste e solte seus arquivos aqui ou <strong>clique para selecionar</strong></p>
+        <input type="file" id="fileInput" style="display: none;" multiple>
+    </div>
+    <div class="progress-bar" id="progressBar"></div>
+    <div class="status" id="statusMessage"></div>
+
+    <!-- Listagem de Arquivos -->
+    <div class="file-list">
+        <h3>Meus Arquivos Recentes</h3>
+        <div id="filesContainer">Preencha as configurações acima para carregar seus arquivos.</div>
+    </div>
+</div>
+
+<script>
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const progressBar = document.getElementById('progressBar');
+    const statusMessage = document.getElementById('statusMessage');
+    const filesContainer = document.getElementById('filesContainer');
+
+    // Carregar configurações salvas no navegador para não ter que redigitar
+    ['repoUser', 'repoName', 'githubToken'].forEach(id => {
+        document.getElementById(id).value = localStorage.getItem(id) || '';
+        document.getElementById(id).addEventListener('input', (e) => localStorage.setItem(id, e.target.value));
+    });
+
+    // Gatilhos de clique e arrastar
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        handleFiles(e.dataTransfer.files);
+    });
+    fileInput.addEventListener('change', () => handleFiles(fileInput.files));
+
+    async function handleFiles(files) {
+        if (files.length === 0) return;
+        
+        const user = document.getElementById('repoUser').value;
+        const repo = document.getElementById('repoName').value;
+        const token = document.getElementById('githubToken').value;
+
+        if (!user || !repo || !token) {
+            alert('Por favor, preencha todos os campos de configuração antes de enviar.');
+            return;
+        }
+
+        for (let file of files) {
+            statusMessage.textContent = `Lendo arquivo: ${file.name}...`;
+            progressBar.style.width = '30%';
+            
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = async () => {
+                const base64Content = reader.result.split(',')[1];
+                // Os arquivos serão salvos dentro de uma pasta chamada "uploads"
+                const url = `https://github.com{user}/${repo}/contents/uploads/${file.name}`;
+                
+                statusMessage.textContent = `Enviando ${file.name} para o GitHub...`;
+                progressBar.style.width = '60%';
+
+                try {
+                    const response = await fetch(url, {
+                        method: 'PUT',
+                        headers: {
+                            'Authorization': `token ${token}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            message: `Upload via painel web: ${file.name}`,
+                            content: base64Content
+                        })
+                    });
+
+                    if (response.ok) {
+                        statusMessage.textContent = `Sucesso! ${file.name} enviado.`;
+                        progressBar.style.width = '100%';
+                        setTimeout(() => { progressBar.style.width = '0%'; }, 2000);
+                        loadFiles();
+                    } else {
+                        const errData = await response.json();
+                        statusMessage.textContent = `Erro: ${errData.message}`;
+                    }
+                } catch (error) {
+                    statusMessage.textContent = 'Erro de conexão com a API.';
+                }
+            };
+        }
+    }
+
+    async function loadFiles() {
+        const user = document.getElementById('repoUser').value;
+        const repo = document.getElementById('repoName').value;
+        const token = document.getElementById('githubToken').value;
+
+        if (!user || !repo) return;
+
+        const url = `https://github.com{user}/${repo}/contents/uploads`;
+        try {
+            const response = await fetch(url, {
+                headers: token ? { 'Authorization': `token ${token}` } : {}
+            });
+            if (response.ok) {
+                const data = await response.json();
+                filesContainer.innerHTML = '';
+                data.forEach(file => {
+                    if(file.type === 'file') {
+                        const item = document.createElement('div');
+                        item.className = 'file-item';
+                        item.innerHTML = `
+                            <span>📄 ${file.name}</span>
+                            <a href="${file.download_url}" target="_blank" download>Baixar</a>
+                        `;
+                        filesContainer.appendChild(item);
+                    }
+                });
+            } else {
+                filesContainer.innerHTML = 'Nenhum arquivo encontrado na pasta "uploads".';
+            }
+        } catch (e) {
+            filesContainer.innerHTML = 'Erro ao carregar lista de arquivos.';
+        }
+    }
+
+    // Tenta carregar os arquivos ao abrir a página
+    window.onload = () => { setTimeout(loadFiles, 1000); };
+</script>
+</body>
+</html>
